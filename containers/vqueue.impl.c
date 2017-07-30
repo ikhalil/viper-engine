@@ -61,7 +61,8 @@ static vqueue_node_t* _init_node(vqueue_impl_t* queue, uint32_t node_index);
 
 size_t vqueue_get_bytes_required(int node_count)
 {
-	return sizeof(vqueue_impl_t) + (sizeof(vqueue_node_t) * node_count);
+	//node_count+1 because we add a dummy node
+	return sizeof(vqueue_impl_t) + (sizeof(vqueue_node_t) * (node_count + 1));
 }
 
 vqueue_t vqueue_create(void* buffer, int node_count)
@@ -72,14 +73,14 @@ vqueue_t vqueue_create(void* buffer, int node_count)
 	queue->free_list.entire = 0;
 	queue->nodes = (vqueue_node_t*)(queue + 1);
 
-	/* Link nodes together. */
-	for (int i = 0; i < node_count - 1; ++i)
+	/* Link nodes together, buffer was allocted with (node_count + 1)  so the last index is node_count */
+	for (int i = 0; i < node_count; ++i)
 	{
 		queue->nodes[i].next.part.index = i + 1;
 		queue->nodes[i].next.part.count = 0;
 	}
-	queue->nodes[node_count - 1].next.part.index = k_vqueue_invalid_index;
-	queue->nodes[node_count - 1].next.part.count = 0;
+	queue->nodes[node_count].next.part.index = k_vqueue_invalid_index;
+	queue->nodes[node_count].next.part.count = 0;
 
 	/* Populate the queue with a dummy node. */
 	uint32_t dummy_index = _alloc_node_index(queue);
@@ -102,13 +103,13 @@ void vqueue_push(vqueue_t q, void* data)
 	vqueue_node_t* node = _init_node(queue, node_index);
 	node->data = data;
 
-	vqueue_pointer_t tail;
+	volatile vqueue_pointer_t tail;
 
 	/* Try until the push succeeds. */
 	for (;;)
 	{
 		tail = queue->tail;
-		vqueue_pointer_t next = queue->nodes[tail.part.index].next;
+		volatile vqueue_pointer_t next = queue->nodes[tail.part.index].next;
 
 		/* Is our view of the queue still consistent? If not, try again. */
 		if (tail.entire == queue->tail.entire)
@@ -144,13 +145,13 @@ void vqueue_push(vqueue_t q, void* data)
 bool vqueue_pop(vqueue_t q, void** data)
 {
 	vqueue_impl_t* queue = (vqueue_impl_t*)(q);
-	vqueue_pointer_t head;
+	volatile vqueue_pointer_t head;
 
 	for (;;)
 	{
-		head = queue->head;
-		vqueue_pointer_t tail = queue->tail;
-		vqueue_pointer_t next = queue->nodes[head.part.index].next;
+		head = queue->head;		
+		volatile vqueue_pointer_t tail = queue->tail;
+		volatile vqueue_pointer_t next = queue->nodes[head.part.index].next;
 
 		/* Is our view of the queue still consistent? If not, try again. */
 		if (head.entire == queue->head.entire)
@@ -199,7 +200,7 @@ static uint32_t _alloc_node_index(vqueue_impl_t* queue)
 
 	for (;;)
 	{
-		vqueue_pointer_t free_list = queue->free_list;
+		volatile vqueue_pointer_t free_list = queue->free_list;
 
 		if (free_list.part.index != k_vqueue_invalid_index)
 		{
@@ -222,7 +223,7 @@ static void _free_node_index(vqueue_impl_t* queue, uint32_t index)
 	vqueue_node_t* node = queue->nodes + index;
 	for (;;)
 	{
-		vqueue_pointer_t free_list = queue->free_list;
+		volatile vqueue_pointer_t free_list = queue->free_list;
 		node->next.part.index = free_list.part.index;
 
 		vqueue_pointer_t link = { .part.index = index, .part.count = free_list.part.count + 1 };
