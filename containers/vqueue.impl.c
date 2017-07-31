@@ -73,7 +73,7 @@ vqueue_t vqueue_create(void* buffer, int node_count)
 	queue->free_list.entire = 0;
 	queue->nodes = (vqueue_node_t*)(queue + 1);
 
-	/* Link nodes together, buffer was allocted with (node_count + 1)  so the last index is node_count */
+	/* Link nodes together, buffer was allocated with (node_count + 1) so the last index is node_count */
 	for (int i = 0; i < node_count; ++i)
 	{
 		queue->nodes[i].next.part.index = i + 1;
